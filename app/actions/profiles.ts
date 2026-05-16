@@ -23,7 +23,7 @@ export async function getProfiles(): Promise<Profile[]> {
     return data as Profile[]
   } catch (error) {
     console.error("Error fetching profiles:", error)
-    return []
+    throw new Error("Failed to fetch profiles")
   }
 }
 

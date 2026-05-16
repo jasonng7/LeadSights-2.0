@@ -17,13 +17,21 @@ import { useToast } from "@/hooks/use-toast"
 export function ProfileSelector() {
   const [profiles, setProfiles] = useState<Profile[]>([])
   const [activeProfile, setActiveProfileState] = useState<Profile | null>(null)
+  const [loadError, setLoadError] = useState(false)
   const { toast } = useToast()
 
   const loadProfiles = async () => {
-    const data = await getProfiles()
-    setProfiles(data)
-    const active = data.find((p) => p.is_active) || null
-    setActiveProfileState(active)
+    try {
+      const data = await getProfiles()
+      setProfiles(data)
+      const active = data.find((p) => p.is_active) || null
+      setActiveProfileState(active)
+      setLoadError(false)
+    } catch {
+      setProfiles([])
+      setActiveProfileState(null)
+      setLoadError(true)
+    }
   }
 
   useEffect(() => {
@@ -45,7 +53,7 @@ export function ProfileSelector() {
       <DropdownMenuTrigger asChild>
         <Button variant="outline" size="sm" className="gap-2 bg-transparent">
           <User className="h-4 w-4" />
-          {activeProfile ? activeProfile.name : "No Profile"}
+          {loadError ? "Profile Error" : activeProfile ? activeProfile.name : "No Profile"}
           <ChevronDown className="h-4 w-4 opacity-50" />
         </Button>
       </DropdownMenuTrigger>

@@ -10,7 +10,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Badge } from "@/components/ui/badge"
-import { Plus, Edit, Trash2, CheckCircle, Loader2, User } from "lucide-react"
+import { AlertCircle, Plus, Edit, Trash2, CheckCircle, Loader2, User } from "lucide-react"
 import {
   getProfiles,
   createProfile,
@@ -28,13 +28,22 @@ export function ProfileManager() {
   const [editingProfile, setEditingProfile] = useState<Profile | null>(null)
   const [formData, setFormData] = useState({ name: "", knowledge_base: "" })
   const [submitting, setSubmitting] = useState(false)
+  const [loadError, setLoadError] = useState<string | null>(null)
   const { toast } = useToast()
 
   const loadProfiles = async () => {
     setLoading(true)
-    const data = await getProfiles()
-    setProfiles(data)
-    setLoading(false)
+    setLoadError(null)
+
+    try {
+      const data = await getProfiles()
+      setProfiles(data)
+    } catch (error) {
+      setLoadError(error instanceof Error ? error.message : "Failed to load profiles")
+      setProfiles([])
+    } finally {
+      setLoading(false)
+    }
   }
 
   useEffect(() => {
@@ -122,6 +131,15 @@ export function ProfileManager() {
       </div>
 
       <div className="grid gap-4">
+        {loadError && (
+          <Card className="border-destructive/40 bg-destructive/10">
+            <CardContent className="flex items-start gap-3 py-4 text-sm text-destructive">
+              <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+              <span>{loadError}. Check your Supabase URL, service role key, and profiles table.</span>
+            </CardContent>
+          </Card>
+        )}
+
         {profiles.map((profile) => (
           <Card
             key={profile.id}
