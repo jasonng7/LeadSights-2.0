@@ -1,6 +1,6 @@
 import { getRequiredEnv } from "@/lib/env"
 import { scoreLead } from "@/lib/lead-scoring"
-import type { Lead, LeadFilters, PlaceReview } from "@/lib/types"
+import type { Lead, LeadFilters, PlaceReview, SearchExpansionSelection } from "@/lib/types"
 
 export interface PlacesSearchParams {
   business_type: string
@@ -8,6 +8,7 @@ export interface PlacesSearchParams {
   radius: number
   max_results: number
   filters?: LeadFilters
+  expansions?: SearchExpansionSelection
 }
 
 interface GooglePlacesResponse<T> {
@@ -15,6 +16,7 @@ interface GooglePlacesResponse<T> {
   error_message?: string
   results?: T[]
   result?: T
+  next_page_token?: string
 }
 
 interface GoogleTextSearchResult {
@@ -73,6 +75,23 @@ interface Coordinates {
   lng: number
 }
 
+interface SearchVariant {
+  businessType: string
+  location: string
+  placeType?: string
+}
+
+interface SearchState {
+  variant: SearchVariant
+  targetLocation: Coordinates | null
+  nextPageToken?: string
+  exhausted: boolean
+  pageCount: number
+}
+
+const MAX_GOOGLE_RESULTS = 60
+const MAX_SEARCH_VARIANTS = 6
+
 /**
  * Fetch places from Google Places API
  * Uses Google Places Text Search and Place Details API
@@ -81,30 +100,15 @@ export async function fetchPlaces(params: PlacesSearchParams): Promise<Lead[]> {
   const apiKey = getRequiredEnv("GOOGLE_MAPS_API_KEY")
 
   try {
-    const searchQuery = `${params.business_type} in ${params.location}`
-    const targetLocation = await geocodeLocation(params.location, apiKey)
-    const locationParams = targetLocation
-      ? `&location=${targetLocation.lat},${targetLocation.lng}&radius=${params.radius}`
-      : `&radius=${params.radius}`
-    const searchUrl = `https://maps.googleapis.com/maps/api/place/textsearch/json?query=${encodeURIComponent(
-      searchQuery,
-    )}${locationParams}&key=${apiKey}`
+    const maxResults = Math.min(Math.max(params.max_results || 20, 1), MAX_GOOGLE_RESULTS)
+    const searchStates = await buildSearchStates(params, apiKey)
+    const placeOrigins = await collectPlaceIds(searchStates, params.radius, maxResults, apiKey)
 
-    const searchResponse = await fetch(searchUrl)
-    const searchData = (await searchResponse.json()) as GooglePlacesResponse<GoogleTextSearchResult>
-
-    if (searchData.status !== "OK" && searchData.status !== "ZERO_RESULTS") {
-      throw new Error(`Google Places API error: ${searchData.status}${searchData.error_message ? ` - ${searchData.error_message}` : ""}`)
-    }
-
-    if (!searchData.results || searchData.results.length === 0) {
+    if (placeOrigins.size === 0) {
       return []
     }
 
-    const placeIds = searchData.results
-      .slice(0, params.max_results)
-      .map((place) => place.place_id)
-      .filter((placeId): placeId is string => Boolean(placeId))
+    const placeIds = Array.from(placeOrigins.keys()).slice(0, maxResults)
 
     const detailedPlaces = await Promise.all(
       placeIds.map(async (placeId: string) => {
@@ -134,6 +138,9 @@ export async function fetchPlaces(params: PlacesSearchParams): Promise<Lead[]> {
           business_status: place.business_status || "OPERATIONAL",
           google_maps_url: place.url || `https://www.google.com/maps/place/?q=place_id:${place.place_id}`,
         }
+
+        const origin = placeOrigins.get(placeId)
+        const targetLocation = origin?.targetLocation
 
         if (targetLocation && baseLead.latitude && baseLead.longitude) {
           baseLead.distance_meters = getDistanceMeters(targetLocation, {
@@ -185,6 +192,163 @@ export async function fetchPlaces(params: PlacesSearchParams): Promise<Lead[]> {
   } catch (error) {
     throw error
   }
+}
+
+async function buildSearchStates(params: PlacesSearchParams, apiKey: string): Promise<SearchState[]> {
+  const geocodeCache = new Map<string, Coordinates | null>()
+  const variants = buildSearchVariants(params).slice(0, MAX_SEARCH_VARIANTS)
+
+  return Promise.all(
+    variants.map(async (variant) => {
+      const cacheKey = variant.location.toLowerCase()
+      const targetLocation = geocodeCache.has(cacheKey)
+        ? geocodeCache.get(cacheKey) || null
+        : await geocodeLocation(variant.location, apiKey)
+
+      geocodeCache.set(cacheKey, targetLocation)
+
+      return {
+        variant,
+        targetLocation,
+        exhausted: false,
+        pageCount: 0,
+      }
+    }),
+  )
+}
+
+function buildSearchVariants(params: PlacesSearchParams): SearchVariant[] {
+  const variants: SearchVariant[] = [{ businessType: params.business_type, location: params.location }]
+  const categories = params.expansions?.business_categories || []
+  const areas = params.expansions?.area_tags || []
+  const targetAreas = areas.length > 0 ? areas : [{ label: params.location, search_term: params.location }]
+  const seen = new Set<string>([getVariantKey(variants[0])])
+
+  categories.forEach((category) => {
+    targetAreas.forEach((area) => {
+      const variant = {
+        businessType: category.search_term,
+        location: area.search_term,
+        placeType: category.google_place_type,
+      }
+      const key = getVariantKey(variant)
+
+      if (!seen.has(key)) {
+        variants.push(variant)
+        seen.add(key)
+      }
+    })
+  })
+
+  return variants
+}
+
+function getVariantKey(variant: SearchVariant): string {
+  return `${variant.businessType.toLowerCase()}|${variant.location.toLowerCase()}|${variant.placeType || ""}`
+}
+
+async function collectPlaceIds(
+  searchStates: SearchState[],
+  radius: number,
+  maxResults: number,
+  apiKey: string,
+): Promise<Map<string, SearchState>> {
+  const placeOrigins = new Map<string, SearchState>()
+  const maxPages = Math.ceil(maxResults / 20)
+
+  while (placeOrigins.size < maxResults && searchStates.some((state) => !state.exhausted && state.pageCount < maxPages)) {
+    for (const state of searchStates) {
+      if (placeOrigins.size >= maxResults || state.exhausted || state.pageCount >= maxPages) continue
+
+      const searchData = await fetchTextSearchPageWithRetry(state, radius, apiKey)
+
+      if (searchData.status === "ZERO_RESULTS") {
+        state.exhausted = true
+        continue
+      }
+
+      if (searchData.status !== "OK") {
+        throw new Error(
+          `Google Places API error: ${searchData.status}${searchData.error_message ? ` - ${searchData.error_message}` : ""}`,
+        )
+      }
+
+      searchData.results?.forEach((place) => {
+        if (place.place_id && !placeOrigins.has(place.place_id) && placeOrigins.size < maxResults) {
+          placeOrigins.set(place.place_id, state)
+        }
+      })
+
+      state.pageCount += 1
+      state.nextPageToken = searchData.next_page_token
+      state.exhausted = !state.nextPageToken
+    }
+  }
+
+  return placeOrigins
+}
+
+async function fetchTextSearchPageWithRetry(
+  state: SearchState,
+  radius: number,
+  apiKey: string,
+): Promise<GooglePlacesResponse<GoogleTextSearchResult>> {
+  const maxAttempts = state.nextPageToken ? 3 : 1
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    if (state.nextPageToken) {
+      await waitForNextPageToken()
+    }
+
+    const searchData = await fetchTextSearchPage(state, radius, apiKey)
+
+    if (searchData.status !== "INVALID_REQUEST" || !state.nextPageToken || attempt === maxAttempts) {
+      return searchData
+    }
+  }
+
+  return fetchTextSearchPage(state, radius, apiKey)
+}
+
+async function fetchTextSearchPage(
+  state: SearchState,
+  radius: number,
+  apiKey: string,
+): Promise<GooglePlacesResponse<GoogleTextSearchResult>> {
+  if (state.nextPageToken) {
+    const params = new URLSearchParams({
+      pagetoken: state.nextPageToken,
+      key: apiKey,
+    })
+    const searchUrl = `https://maps.googleapis.com/maps/api/place/textsearch/json?${params.toString()}`
+    const searchResponse = await fetch(searchUrl)
+
+    return (await searchResponse.json()) as GooglePlacesResponse<GoogleTextSearchResult>
+  }
+
+  const searchQuery = `${state.variant.businessType} in ${state.variant.location}`
+  const params = new URLSearchParams({
+    query: searchQuery,
+    radius: String(radius),
+    key: apiKey,
+  })
+
+  if (state.targetLocation) {
+    params.set("location", `${state.targetLocation.lat},${state.targetLocation.lng}`)
+  }
+
+  if (state.variant.placeType) {
+    params.set("type", state.variant.placeType)
+  }
+
+  const searchUrl = `https://maps.googleapis.com/maps/api/place/textsearch/json?${params.toString()}`
+  const searchResponse = await fetch(searchUrl)
+
+  return (await searchResponse.json()) as GooglePlacesResponse<GoogleTextSearchResult>
+}
+
+function waitForNextPageToken(): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, 2000))
 }
 
 async function geocodeLocation(location: string, apiKey: string): Promise<Coordinates | null> {

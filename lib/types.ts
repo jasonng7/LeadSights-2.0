@@ -27,6 +27,18 @@ export interface LeadFilters {
   max_distance_meters?: number
 }
 
+export interface SearchExpansionSelection {
+  business_categories?: Array<{
+    label: string
+    search_term: string
+    google_place_type: string
+  }>
+  area_tags?: Array<{
+    label: string
+    search_term: string
+  }>
+}
+
 export interface PlaceReview {
   author_name: string
   author_url?: string
