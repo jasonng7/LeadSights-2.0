@@ -26,6 +26,16 @@ const searchDepthOptions = [
   { value: "60", label: "Deep 60", warning: "Highest cost" },
 ]
 
+function getRecommendedCategoryIds(categories: BusinessCategoryExpansion[], depth: number): string[] {
+  const count = depth >= 60 ? 3 : depth >= 40 ? 2 : 1
+  return categories.slice(0, count).map((category) => category.id)
+}
+
+function getRecommendedAreaIds(areas: AreaTagExpansion[], depth: number): string[] {
+  const count = depth >= 40 ? 2 : 1
+  return areas.slice(0, count).map((area) => area.id)
+}
+
 export function SearchForm() {
   const [isSearching, setIsSearching] = useState(false)
   const [isGeneratingExpansions, setIsGeneratingExpansions] = useState(false)
@@ -49,6 +59,8 @@ export function SearchForm() {
   const [searchResults, setSearchResults] = useState<{
     businessType: string
     location: string
+    maxResults: number
+    expansionCount: number
     leads: Lead[]
   } | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -65,13 +77,16 @@ export function SearchForm() {
 
     setIsSearching(true)
     setError(null)
+    const maxResults = Number(searchDepth)
+    const expansionCategoryCount = expansions?.business_categories?.length || 0
+    const expansionAreaCount = Math.max(1, expansions?.area_tags?.length || 0)
 
     try {
       const leads = await searchLeads({
         business_type: businessType,
         location: searchLocation,
         radius: Number(radiusKm || 5) * 1000,
-        max_results: Number(searchDepth),
+        max_results: maxResults,
         expansions,
         filters: {
           min_rating: minRating ? Number(minRating) : undefined,
@@ -86,6 +101,8 @@ export function SearchForm() {
       setSearchResults({
         businessType,
         location: searchLocation,
+        maxResults,
+        expansionCount: expansionCategoryCount * expansionAreaCount,
         leads,
       })
     } catch (error) {
@@ -103,8 +120,8 @@ export function SearchForm() {
     try {
       const plan = await generateSearchExpansionPlan(businessType, searchLocation)
       setExpansionPlan(plan)
-      setSelectedCategoryIds([])
-      setSelectedAreaIds([])
+      setSelectedCategoryIds(getRecommendedCategoryIds(plan.business_categories, Number(searchDepth)))
+      setSelectedAreaIds(getRecommendedAreaIds(plan.area_tags, Number(searchDepth)))
       setChooseExpansionOpen(true)
     } catch (error) {
       setError(error instanceof Error ? error.message : "Failed to expand the search.")
@@ -423,7 +440,7 @@ export function SearchForm() {
             <div className="space-y-3">
               <div>
                 <h3 className="font-semibold text-foreground">Business Categories</h3>
-                <p className="text-sm text-muted-foreground">Google Places tags selected by AI</p>
+                <p className="text-sm text-muted-foreground">Recommended tags are preselected to increase lead count.</p>
               </div>
 
               <div className="space-y-2">
@@ -453,7 +470,7 @@ export function SearchForm() {
             <div className="space-y-3">
               <div>
                 <h3 className="font-semibold text-foreground">Nearby Areas</h3>
-                <p className="text-sm text-muted-foreground">Optional location tags to diversify results</p>
+                <p className="text-sm text-muted-foreground">Recommended areas are preselected to diversify results.</p>
               </div>
 
               <div className="space-y-2">

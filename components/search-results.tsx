@@ -11,12 +11,14 @@ interface SearchResultsProps {
   searchResults: {
     businessType: string
     location: string
+    maxResults?: number
+    expansionCount?: number
     leads: Lead[]
   }
 }
 
 export function SearchResults({ searchResults }: SearchResultsProps) {
-  const { businessType, location, leads } = searchResults
+  const { businessType, location, leads, maxResults, expansionCount = 0 } = searchResults
 
   if (leads.length === 0) {
     return (
@@ -41,6 +43,12 @@ export function SearchResults({ searchResults }: SearchResultsProps) {
           <h2 className="text-3xl font-bold text-foreground text-balance">
             {businessType} in {location}
           </h2>
+          {maxResults && leads.length < maxResults && (
+            <p className="mt-2 max-w-3xl text-sm text-muted-foreground">
+              Showing {leads.length} of up to {maxResults}. Google may return fewer exact matches; use selected
+              expansions, widen the radius, or loosen filters to find more.
+            </p>
+          )}
           <div className="flex items-center gap-4 mt-3">
             <div className="px-4 py-2 bg-primary/10 rounded-lg">
               <span className="text-2xl font-bold text-primary">{leads.length}</span>
@@ -58,6 +66,12 @@ export function SearchResults({ searchResults }: SearchResultsProps) {
               </span>
               <span className="text-sm text-muted-foreground ml-2">avg rating</span>
             </div>
+            {expansionCount > 0 && (
+              <div className="px-4 py-2 bg-accent rounded-lg">
+                <span className="text-2xl font-bold text-foreground">{expansionCount}</span>
+                <span className="text-sm text-muted-foreground ml-2">expansions</span>
+              </div>
+            )}
           </div>
         </div>
         <ExportButton leads={leads} businessType={businessType} location={location} />
