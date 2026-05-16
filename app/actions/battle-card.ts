@@ -47,25 +47,26 @@ Note: No company profile is currently active. Generate a generic sales approach.
 Business: ${lead.name}
 Location: ${lead.address}
 Rating: ${lead.rating}/5 stars
-Total Reviews: ${lead.user_ratings_total}
+Total Google Reviews: ${lead.user_ratings_total} (metadata only; do not claim to have read every review)
+Review Excerpts Available to AI: ${reviews.length} (Google Places API returns up to 5)
 Lead Score: ${lead.lead_score}/100
 Score Reasons: ${lead.score_reasons.join(", ") || "No score reasons available"}
 
-Recent Reviews (from Google):
+Available Google Review Excerpts:
 ${reviewsText}
 
 ${companyContext}
 
-Based on the actual customer reviews, business data, and YOUR COMPANY PROFILE, create a comprehensive sales battle card that counters negative sentiments and leverages opportunities using your specific strengths and products:
+Based on the available review excerpts, business data, and YOUR COMPANY PROFILE, create a comprehensive sales battle card that counters negative sentiments and leverages opportunities using your specific strengths and products:
 
-1. Pitch Angle: 2-3 sentence approach tailored to this specific business based on review themes AND how your company's offerings can help
-2. Pain Points: 3-4 specific challenges evident from the reviews and business profile
+1. Pitch Angle: 2-3 sentence approach tailored to this specific business based on available review themes AND how your company's offerings can help
+2. Pain Points: 3-4 specific challenges evident from the available reviews and business profile
 3. Value Proposition: How YOUR SPECIFIC PRODUCTS/SERVICES address the pain points identified in reviews
 4. Objection Handling: 3 common objections with data-driven responses using your company's strengths
 5. Conversation Starters: 3 opening questions based on review insights that lead to your solutions
-6. Review Sentiment: Detailed analysis of the ${reviews.length} reviews - common themes, strengths, complaints, and overall sentiment
+6. Review Sentiment: Analysis of the ${reviews.length} available review excerpts - common themes, strengths, complaints, and overall sentiment. Be explicit that this is based on available excerpts, not the full review corpus.
 
-IMPORTANT: The battle card should be a strategic document that shows how YOUR company can solve THEIR problems based on what customers are saying in reviews.
+IMPORTANT: The battle card should be a strategic document that shows how YOUR company can solve THEIR problems based on available review evidence. Do not imply that all ${lead.user_ratings_total} reviews were analyzed.
 
 Return a concise, tactical battle card.`
 

@@ -42,8 +42,8 @@ export function BattleCardDialog({ lead, open, onOpenChange }: BattleCardDialogP
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">Battle Card: {lead.name}</DialogTitle>
           <DialogDescription>
-            AI-generated sales strategy based on {lead.user_ratings_total} Google reviews and {lead.rating.toFixed(1)}★
-            rating
+            AI-generated sales strategy based on Google&apos;s available review excerpts, up to 5 reviews, plus{" "}
+            {lead.user_ratings_total.toLocaleString()} total-review metadata and a {lead.rating.toFixed(1)}★ rating
           </DialogDescription>
         </DialogHeader>
 

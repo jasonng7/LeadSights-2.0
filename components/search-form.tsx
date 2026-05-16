@@ -1,7 +1,8 @@
 "use client"
 
 import type React from "react"
-import { useState } from "react"
+import { useEffect, useRef, useState } from "react"
+import Script from "next/script"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -11,10 +12,14 @@ import { SearchResults } from "@/components/search-results"
 import { searchLeads } from "@/app/actions/search"
 import type { Lead } from "@/lib/types"
 
+const ratingOptions = ["0", "0.5", "1", "1.5", "2", "2.5", "3", "3.5", "4", "4.5", "5"]
+
 export function SearchForm() {
   const [isSearching, setIsSearching] = useState(false)
   const [businessType, setBusinessType] = useState("")
   const [location, setLocation] = useState("")
+  const [confirmedLocation, setConfirmedLocation] = useState("")
+  const [mapsLoaded, setMapsLoaded] = useState(false)
   const [radiusKm, setRadiusKm] = useState("5")
   const [minRating, setMinRating] = useState("")
   const [maxRating, setMaxRating] = useState("")
@@ -27,6 +32,28 @@ export function SearchForm() {
     leads: Lead[]
   } | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const locationInputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    if (!mapsLoaded || !locationInputRef.current || !window.google?.maps?.places) return
+
+    const autocomplete = new window.google.maps.places.Autocomplete(locationInputRef.current, {
+      fields: ["formatted_address", "name"],
+      types: ["geocode", "establishment"],
+    })
+
+    const listener = autocomplete.addListener("place_changed", () => {
+      const place = autocomplete.getPlace()
+      const selectedLocation = place.formatted_address || place.name || locationInputRef.current?.value || ""
+
+      setLocation(selectedLocation)
+      setConfirmedLocation(selectedLocation)
+    })
+
+    return () => {
+      listener.remove()
+    }
+  }, [mapsLoaded])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -67,6 +94,14 @@ export function SearchForm() {
 
   return (
     <>
+      {process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY && (
+        <Script
+          id="google-maps-js"
+          src={`https://maps.googleapis.com/maps/api/js?key=${process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY}&libraries=places&loading=async`}
+          strategy="afterInteractive"
+          onLoad={() => setMapsLoaded(true)}
+        />
+      )}
       <Card className="mb-8 shadow-lg border-2 hover:border-primary/50 transition-colors animate-scale-in">
         <CardContent className="pt-8 pb-8">
           <form onSubmit={handleSubmit} className="space-y-6">
@@ -95,19 +130,26 @@ export function SearchForm() {
                   Location
                 </Label>
                 <Input
+                  ref={locationInputRef}
                   id="location"
-                  placeholder="e.g., Kuala Lumpur, KLCC"
+                  placeholder="Start typing and choose a Google suggestion"
                   value={location}
-                  onChange={(e) => setLocation(e.target.value)}
+                  onChange={(e) => {
+                    setLocation(e.target.value)
+                    setConfirmedLocation("")
+                  }}
                   required
                   className="h-12 text-base border-2 focus:border-primary transition-colors"
                 />
+                <p className="text-xs text-muted-foreground">
+                  {confirmedLocation ? `Using Google location: ${confirmedLocation}` : "Select a suggestion to confirm the location."}
+                </p>
               </div>
             </div>
 
             <div className="grid gap-4 border-t border-border pt-6 sm:grid-cols-2 lg:grid-cols-6">
               <div className="space-y-2">
-                <Label htmlFor="radius-km">Distance</Label>
+                <Label htmlFor="radius-km">Search Radius (km)</Label>
                 <Input
                   id="radius-km"
                   type="number"
@@ -121,32 +163,36 @@ export function SearchForm() {
 
               <div className="space-y-2">
                 <Label htmlFor="min-rating">Min Rating</Label>
-                <Input
+                <select
                   id="min-rating"
-                  type="number"
-                  min="0"
-                  max="5"
-                  step="0.1"
-                  placeholder="Any"
                   value={minRating}
                   onChange={(e) => setMinRating(e.target.value)}
-                  className="h-11"
-                />
+                  className="h-11 w-full rounded-md border-2 border-input bg-background px-3 text-sm"
+                >
+                  <option value="">Any</option>
+                  {ratingOptions.map((rating) => (
+                    <option key={rating} value={rating}>
+                      {rating}
+                    </option>
+                  ))}
+                </select>
               </div>
 
               <div className="space-y-2">
                 <Label htmlFor="max-rating">Max Rating</Label>
-                <Input
+                <select
                   id="max-rating"
-                  type="number"
-                  min="0"
-                  max="5"
-                  step="0.1"
-                  placeholder="Any"
                   value={maxRating}
                   onChange={(e) => setMaxRating(e.target.value)}
-                  className="h-11"
-                />
+                  className="h-11 w-full rounded-md border-2 border-input bg-background px-3 text-sm"
+                >
+                  <option value="">Any</option>
+                  {ratingOptions.map((rating) => (
+                    <option key={rating} value={rating}>
+                      {rating}
+                    </option>
+                  ))}
+                </select>
               </div>
 
               <div className="space-y-2">

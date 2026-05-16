@@ -180,7 +180,8 @@ export function LeadMap({ leads }: LeadMapProps) {
     <>
       {mapsApiKey && (
         <Script
-          src={`https://maps.googleapis.com/maps/api/js?key=${mapsApiKey}&libraries=places`}
+          id="google-maps-js"
+          src={`https://maps.googleapis.com/maps/api/js?key=${mapsApiKey}&libraries=places&loading=async`}
           onLoad={() => setIsLoaded(true)}
           strategy="afterInteractive"
         />
