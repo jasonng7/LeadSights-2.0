@@ -8,7 +8,8 @@ AI-powered local lead intelligence for finding, filtering, scoring, and preparin
 - Lead filters for distance, rating range, review count, missing website, and business status
 - Real lead scoring based on opportunity and contactability signals
 - OpenAI-generated sales battle cards from business details, reviews, and your company profile
-- Supabase-backed company profile management
+- Supabase-backed company profile management with PDF, DOCX, Markdown, TXT, and pasted-text digesting
+- Custom place-confirmation modal for ambiguous locations before searching
 - Lead table, map view, reviews dialog, and CSV/JSON export
 
 ## Tech Stack

@@ -7,9 +7,11 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Card, CardContent } from "@/components/ui/card"
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { AlertCircle, Loader2, Search, MapPin, Briefcase } from "lucide-react"
 import { SearchResults } from "@/components/search-results"
 import { searchLeads } from "@/app/actions/search"
+import { getLocationCandidates, type LocationCandidate } from "@/app/actions/locations"
 import type { Lead } from "@/lib/types"
 
 const ratingOptions = ["0", "0.5", "1", "1.5", "2", "2.5", "3", "3.5", "4", "4.5", "5"]
@@ -19,6 +21,9 @@ export function SearchForm() {
   const [businessType, setBusinessType] = useState("")
   const [location, setLocation] = useState("")
   const [confirmedLocation, setConfirmedLocation] = useState("")
+  const [locationCandidates, setLocationCandidates] = useState<LocationCandidate[]>([])
+  const [choosePlaceOpen, setChoosePlaceOpen] = useState(false)
+  const [resolvingLocation, setResolvingLocation] = useState(false)
   const [mapsLoaded, setMapsLoaded] = useState(false)
   const [radiusKm, setRadiusKm] = useState("5")
   const [minRating, setMinRating] = useState("")
@@ -55,10 +60,8 @@ export function SearchForm() {
     }
   }, [mapsLoaded])
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-
-    if (!businessType || !location) return
+  const performSearch = async (searchLocation: string) => {
+    if (!businessType || !searchLocation) return
 
     setIsSearching(true)
     setError(null)
@@ -66,7 +69,7 @@ export function SearchForm() {
     try {
       const leads = await searchLeads({
         business_type: businessType,
-        location: location,
+        location: searchLocation,
         radius: Number(radiusKm || 5) * 1000,
         max_results: 20,
         filters: {
@@ -81,7 +84,7 @@ export function SearchForm() {
 
       setSearchResults({
         businessType,
-        location,
+        location: searchLocation,
         leads,
       })
     } catch (error) {
@@ -90,6 +93,44 @@ export function SearchForm() {
     } finally {
       setIsSearching(false)
     }
+  }
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+
+    if (!businessType || !location) return
+
+    if (confirmedLocation !== location) {
+      setResolvingLocation(true)
+      setError(null)
+
+      try {
+        const candidates = await getLocationCandidates(location)
+        setLocationCandidates(candidates)
+
+        if (candidates.length === 0) {
+          setError("No matching Google places found. Try a more specific location.")
+          return
+        }
+
+        setChoosePlaceOpen(true)
+      } catch (error) {
+        setError(error instanceof Error ? error.message : "Failed to confirm location.")
+      } finally {
+        setResolvingLocation(false)
+      }
+
+      return
+    }
+
+    await performSearch(location)
+  }
+
+  const handleChoosePlace = async (candidate: LocationCandidate) => {
+    setLocation(candidate.address)
+    setConfirmedLocation(candidate.address)
+    setChoosePlaceOpen(false)
+    await performSearch(candidate.address)
   }
 
   return (
@@ -240,14 +281,14 @@ export function SearchForm() {
 
             <Button
               type="submit"
-              disabled={isSearching}
+              disabled={isSearching || resolvingLocation}
               size="lg"
               className="w-full md:w-auto px-8 text-base font-semibold shadow-lg hover:shadow-xl transition-all"
             >
-              {isSearching ? (
+              {isSearching || resolvingLocation ? (
                 <>
                   <Loader2 className="mr-2 h-5 w-5 animate-spin" />
-                  Searching leads...
+                  {resolvingLocation ? "Confirming location..." : "Searching leads..."}
                 </>
               ) : (
                 <>
@@ -268,6 +309,37 @@ export function SearchForm() {
       </Card>
 
       {searchResults && <SearchResults searchResults={searchResults} />}
+
+      <Dialog open={choosePlaceOpen} onOpenChange={setChoosePlaceOpen}>
+        <DialogContent className="max-w-3xl gap-0 p-0">
+          <DialogHeader className="border-b border-border p-6">
+            <DialogTitle className="text-3xl">Choose Place</DialogTitle>
+            <DialogDescription className="text-lg">{location}</DialogDescription>
+          </DialogHeader>
+
+          <div className="max-h-[70vh] overflow-y-auto">
+            {locationCandidates.map((candidate) => (
+              <button
+                key={candidate.place_id}
+                type="button"
+                onClick={() => handleChoosePlace(candidate)}
+                className="block w-full border-b border-border p-6 text-left transition-colors hover:bg-accent/60"
+              >
+                <div className="flex items-start justify-between gap-4">
+                  <div className="space-y-3">
+                    <div className="text-2xl font-bold text-foreground">{candidate.name}</div>
+                    <p className="text-lg leading-relaxed text-muted-foreground">{candidate.address}</p>
+                    <div className="font-semibold text-primary">✓ Select this match</div>
+                  </div>
+                  <div className="rounded-lg bg-primary px-4 py-2 text-lg font-bold text-primary-foreground">
+                    {candidate.confidence}%
+                  </div>
+                </div>
+              </button>
+            ))}
+          </div>
+        </DialogContent>
+      </Dialog>
     </>
   )
 }

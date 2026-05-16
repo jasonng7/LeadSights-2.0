@@ -10,7 +10,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Badge } from "@/components/ui/badge"
-import { AlertCircle, Plus, Edit, Trash2, CheckCircle, Loader2, User } from "lucide-react"
+import { AlertCircle, FileText, Plus, Edit, Trash2, CheckCircle, Loader2, User, Wand2 } from "lucide-react"
 import {
   getProfiles,
   createProfile,
@@ -19,6 +19,7 @@ import {
   setActiveProfile,
   type Profile,
 } from "@/app/actions/profiles"
+import { digestKnowledgeBase } from "@/app/actions/knowledge-base"
 import { useToast } from "@/hooks/use-toast"
 
 export function ProfileManager() {
@@ -28,6 +29,8 @@ export function ProfileManager() {
   const [editingProfile, setEditingProfile] = useState<Profile | null>(null)
   const [formData, setFormData] = useState({ name: "", knowledge_base: "" })
   const [submitting, setSubmitting] = useState(false)
+  const [digesting, setDigesting] = useState(false)
+  const [sourceFiles, setSourceFiles] = useState<File[]>([])
   const [loadError, setLoadError] = useState<string | null>(null)
   const { toast } = useToast()
 
@@ -58,7 +61,39 @@ export function ProfileManager() {
       setEditingProfile(null)
       setFormData({ name: "", knowledge_base: "" })
     }
+    setSourceFiles([])
     setDialogOpen(true)
+  }
+
+  const handleDigestKnowledgeBase = async () => {
+    if (!formData.knowledge_base.trim() && sourceFiles.length === 0) {
+      toast({
+        title: "Add source material first",
+        description: "Paste notes or upload PDF, DOCX, Markdown, or TXT files.",
+        variant: "destructive",
+      })
+      return
+    }
+
+    setDigesting(true)
+
+    try {
+      const digestFormData = new FormData()
+      digestFormData.append("notes", formData.knowledge_base)
+      sourceFiles.forEach((file) => digestFormData.append("files", file))
+
+      const digest = await digestKnowledgeBase(digestFormData)
+      setFormData((current) => ({ ...current, knowledge_base: digest }))
+      toast({ title: "Knowledge base digested into Markdown" })
+    } catch (error) {
+      toast({
+        title: "Digest failed",
+        description: error instanceof Error ? error.message : "Failed to digest source material",
+        variant: "destructive",
+      })
+    } finally {
+      setDigesting(false)
+    }
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -219,9 +254,30 @@ export function ProfileManager() {
 
             <div className="space-y-2">
               <Label htmlFor="knowledge_base">Company Knowledge Base</Label>
+              <div className="rounded-lg border border-border bg-muted/30 p-4">
+                <Label htmlFor="knowledge-files" className="flex items-center gap-2 text-sm font-semibold">
+                  <FileText className="h-4 w-4 text-primary" />
+                  Upload Sources
+                </Label>
+                <Input
+                  id="knowledge-files"
+                  type="file"
+                  multiple
+                  accept=".pdf,.docx,.md,.txt,text/markdown,text/plain,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                  onChange={(event) => setSourceFiles(Array.from(event.target.files || []))}
+                  className="mt-3 h-auto py-2"
+                />
+                {sourceFiles.length > 0 && (
+                  <div className="mt-3 space-y-1 text-xs text-muted-foreground">
+                    {sourceFiles.map((file) => (
+                      <div key={`${file.name}-${file.size}`}>{file.name}</div>
+                    ))}
+                  </div>
+                )}
+              </div>
               <Textarea
                 id="knowledge_base"
-                placeholder="Enter your company information, product details, unique selling points, core messaging, etc.&#10;&#10;Example:&#10;- We are a leading CRM software company&#10;- Our products: CRM Pro, Sales Automation Suite, Customer Analytics&#10;- Key strengths: 24/7 support, 99.9% uptime, AI-powered insights&#10;- Target market: SMBs and mid-market companies&#10;- Pricing: Competitive with flexible plans"
+                placeholder="Paste notes or existing Markdown here. You can also upload PDF, DOCX, Markdown, or TXT files, then click Digest to Markdown."
                 value={formData.knowledge_base}
                 onChange={(e) => setFormData({ ...formData, knowledge_base: e.target.value })}
                 required
@@ -229,9 +285,26 @@ export function ProfileManager() {
                 className="resize-none"
               />
               <p className="text-xs text-muted-foreground">
-                Include as much detail as possible: products, services, USPs, target markets, pricing, case studies,
-                etc.
+                The digest turns uploaded files and notes into a compact Markdown profile used by battle-card AI.
               </p>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={handleDigestKnowledgeBase}
+                disabled={digesting || submitting}
+              >
+                {digesting ? (
+                  <>
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    Digesting...
+                  </>
+                ) : (
+                  <>
+                    <Wand2 className="h-4 w-4 mr-2" />
+                    Digest to Markdown
+                  </>
+                )}
+              </Button>
             </div>
 
             <div className="flex justify-end gap-2">
